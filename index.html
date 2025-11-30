@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <!--
+      2025-11-30 Igor Guida - Madeinlinux®
+      In questo file definisco la versione PWA del mio contatore di acqua.
+      Qui aggiungo manifest e service worker per farlo installare come app su iOS/Android.
+    -->
+    <meta charset="UTF-8" />
+    <title>Acqua di oggi</title>
+
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+
+    <!-- PWA: colore barra indirizzi / status bar -->
+    <meta name="theme-color" content="#1e88e5" />
+
+    <!-- PWA: manifest (uso percorso relativo per funzionare bene su GitHub Pages) -->
+    <link rel="manifest" href="manifest.webmanifest" />
+
+    <!-- PWA: icona per iOS quando aggiungo alla Home -->
+    <link rel="apple-touch-icon" href="icons/icon-192.png" />
+
+    <!-- Modalità "app" su iOS -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Acqua Giorno" />
+
+    <style>
+        /*
+         * 2025-11-30 Igor Guida - Madeinlinux®
+         * Semplice PWA per contare quanti bicchieri di acqua bevo in un giorno.
+         * Qui creo una UI minimale ma pulita per iPhone.
+         */
+
+        :root {
+            --bg: #f5f7fb;
+            --card-bg: #ffffff;
+            --accent: #1e88e5;
+            --accent-soft: #bbdefb;
+            --accent-strong: #1565c0;
+            --text-main: #1c1c1c;
+            --text-muted: #6b7280;
+            --danger: #ef4444;
+            --shadow-soft: 0 10px 25px rgba(15, 23, 42, 0.08);
+            --radius-lg: 18px;
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            padding: 16px;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+            background: radial-gradient(circle at top, #e3f2fd 0, #f5f7fb 55%);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 420px;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-soft);
+            padding: 20px 18px 18px;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .header-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+
+        .header-date {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-align: right;
+        }
+
+        .goal-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 10px 0 6px;
+            gap: 10px;
+        }
+
+        .goal-label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .goal-controls {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--accent-soft);
+            border-radius: 999px;
+            padding: 4px 8px;
+        }
+
+        .goal-btn {
+            border: none;
+            background: transparent;
+            font-size: 1.1rem;
+            padding: 0 4px;
+            cursor: pointer;
+            color: var(--accent-strong);
+        }
+
+        .goal-value {
+            min-width: 24px;
+            text-align: center;
+            font-weight: 600;
+            color: var(--accent-strong);
+        }
+
+        .progress-card {
+            margin-top: 6px;
+            padding: 12px 12px 14px;
+            border-radius: var(--radius-lg);
+            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .progress-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+        }
+
+        .count-main {
+            font-size: 2.4rem;
+            font-weight: 700;
+        }
+
+        .count-main span {
+            font-size: 0.95rem;
+            font-weight: 500;
+            margin-left: 4px;
+        }
+
+        .goal-text {
+            font-size: 0.85rem;
+            color: #0f172a;
+            text-align: right;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 10px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.6);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar-fill {
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0%;
+            border-radius: inherit;
+            background: linear-gradient(90deg, var(--accent-strong), #00bcd4);
+            transition: width 0.25s ease-out;
+        }
+
+        .buttons-row {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+        }
+
+        .btn-main {
+            flex: 1;
+            border: none;
+            border-radius: 999px;
+            padding: 14px 12px;
+            font-size: 1.05rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+            color: #ffffff;
+            cursor: pointer;
+            box-shadow: 0 12px 20px rgba(21, 101, 192, 0.35);
+        }
+
+        .btn-main:active {
+            transform: translateY(1px);
+            box-shadow: 0 8px 14px rgba(21, 101, 192, 0.35);
+        }
+
+        .btn-secondary {
+            flex-basis: 80px;
+            border-radius: 999px;
+            border: none;
+            padding: 10px 8px;
+            font-size: 0.9rem;
+            font-weight: 500;
+            background: #e5e7eb;
+            color: #374151;
+            cursor: pointer;
+        }
+
+        .btn-secondary:active {
+            transform: translateY(1px);
+        }
+
+        .footer-text {
+            margin-top: 12px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        .footer-text strong {
+            color: var(--accent-strong);
+        }
+
+        .btn-danger {
+            color: var(--danger);
+        }
+
+        @media (max-width: 380px) {
+            .card {
+                padding: 16px 14px 14px;
+            }
+            .count-main {
+                font-size: 2.1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <div class="card">
+        <div class="header">
+            <div class="header-title">Acqua di oggi</div>
+            <div class="header-date" id="todayDate">
+                <!-- Qui mostro la data di oggi -->
+            </div>
+        </div>
+
+        <div class="goal-row">
+            <div class="goal-label">Obiettivo giornaliero (bicchieri):</div>
+            <div class="goal-controls">
+                <button class="goal-btn" id="goalMinus" aria-label="Diminuisco obiettivo">−</button>
+                <div class="goal-value" id="goalValue">8</div>
+                <button class="goal-btn" id="goalPlus" aria-label="Aumento obiettivo">+</button>
+            </div>
+        </div>
+
+        <div class="progress-card">
+            <div class="progress-top">
+                <div class="count-main" id="countDisplay">
+                    0 <span>bicchieri</span>
+                </div>
+                <div class="goal-text" id="goalSummary">
+                    0 di 8 bicchieri
+                </div>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-bar-fill" id="progressFill"></div>
+            </div>
+        </div>
+
+        <div class="buttons-row">
+            <button class="btn-main" id="btnAdd">+1 bicchiere</button>
+            <button class="btn-secondary" id="btnMinus">−1</button>
+        </div>
+
+        <div class="buttons-row" style="margin-top:10px;">
+            <button class="btn-secondary btn-danger" id="btnReset">Azzera oggi</button>
+        </div>
+
+        <div class="footer-text">
+            <strong>Nota:</strong> i dati sono salvati solo su questo dispositivo
+            (io tengo il mio contatore personale).
+        </div>
+    </div>
+</div>
+
+<script>
+    /*
+     * 2025-11-30 Igor Guida - Madeinlinux®
+     * In questo script gestisco:
+     * - Salvataggio del conteggio per il giorno corrente
+     * - Obiettivo giornaliero modificabile
+     * - Reset manuale (io lo posso azzerare quando voglio)
+     */
+
+    // Qui imposto le chiavi per il localStorage
+    const STORAGE_PREFIX = "madeinlinux_water_";
+    const TODAY = new Date().toISOString().slice(0, 10); // AAAA-MM-GG
+    const COUNT_KEY = STORAGE_PREFIX + "count_" + TODAY;
+    const GOAL_KEY = STORAGE_PREFIX + "goal";
+
+    const dateEl = document.getElementById("todayDate");
+    const countDisplayEl = document.getElementById("countDisplay");
+    const goalSummaryEl = document.getElementById("goalSummary");
+    const progressFillEl = document.getElementById("progressFill");
+    const goalValueEl = document.getElementById("goalValue");
+
+    const btnAdd = document.getElementById("btnAdd");
+    const btnMinus = document.getElementById("btnMinus");
+    const btnReset = document.getElementById("btnReset");
+    const goalPlus = document.getElementById("goalPlus");
+    const goalMinus = document.getElementById("goalMinus");
+
+    // Qui inizializzo le variabili principali
+    let currentCount = 0;
+    let dailyGoal = 8;
+
+    // Funzione per mostrare la data in formato italiano
+    function formatDateItalian(date) {
+        // Qui formatto la data come "30 novembre 2025"
+        return date.toLocaleDateString("it-IT", {
+            day: "numeric",
+            month: "long",
+            year: "numeric"
+        });
+    }
+
+    // Funzione per caricare i dati salvati
+    function loadState() {
+        // Qui carico il conteggio salvato per oggi, se esiste
+        const savedCount = localStorage.getItem(COUNT_KEY);
+        if (savedCount !== null) {
+            currentCount = parseInt(savedCount, 10) || 0;
+        }
+
+        // Qui carico l'obiettivo salvato (vale anche per i giorni futuri)
+        const savedGoal = localStorage.getItem(GOAL_KEY);
+        if (savedGoal !== null) {
+            dailyGoal = parseInt(savedGoal, 10) || dailyGoal;
+        }
+    }
+
+    // Funzione per salvare il conteggio attuale
+    function saveCount() {
+        // Qui salvo il numero di bicchieri bevuti oggi
+        localStorage.setItem(COUNT_KEY, String(currentCount));
+    }
+
+    // Funzione per salvare l'obiettivo giornaliero
+    function saveGoal() {
+        // Qui salvo il numero di bicchieri che voglio bere ogni giorno
+        localStorage.setItem(GOAL_KEY, String(dailyGoal));
+    }
+
+    // Funzione per aggiornare la UI
+    function updateUI() {
+        // Qui aggiorno il testo del contatore principale
+        countDisplayEl.innerHTML = currentCount + ' <span>bicchieri</span>';
+
+        // Qui aggiorno la riga "X di Y bicchieri"
+        goalSummaryEl.textContent = currentCount + " di " + dailyGoal + " bicchieri";
+
+        // Qui aggiorno il valore numerico dell'obiettivo
+        goalValueEl.textContent = dailyGoal;
+
+        // Qui calcolo la percentuale per la barra di avanzamento
+        const ratio = Math.min(currentCount / dailyGoal, 1);
+        const percent = isFinite(ratio) ? ratio * 100 : 0;
+        progressFillEl.style.width = percent + "%";
+    }
+
+    // Inizializzo tutto all'avvio della pagina
+    function init() {
+        // Qui mostro la data di oggi nel formato italiano
+        dateEl.textContent = formatDateItalian(new Date());
+
+        // Qui carico stato e lo riporto a video
+        loadState();
+        updateUI();
+
+        // Qui imposto gli handler dei pulsanti
+        btnAdd.addEventListener("click", function () {
+            // Aggiungo un bicchiere
+            currentCount += 1;
+            saveCount();
+            updateUI();
+        });
+
+        btnMinus.addEventListener("click", function () {
+            // Tolgo un bicchiere solo se maggiore di 0
+            if (currentCount > 0) {
+                currentCount -= 1;
+                saveCount();
+                updateUI();
+            }
+        });
+
+        btnReset.addEventListener("click", function () {
+            // Qui azzero il conteggio di oggi
+            const ok = confirm("Vuoi davvero azzerare i bicchieri di oggi?");
+            if (ok) {
+                currentCount = 0;
+                saveCount();
+                updateUI();
+            }
+        });
+
+        goalPlus.addEventListener("click", function () {
+            // Aumento l'obiettivo (massimo 20 per evitare esagerazioni)
+            if (dailyGoal < 20) {
+                dailyGoal += 1;
+                saveGoal();
+                updateUI();
+            }
+        });
+
+        goalMinus.addEventListener("click", function () {
+            // Diminuisco l'obiettivo ma non vado sotto 3
+            if (dailyGoal > 3) {
+                dailyGoal -= 1;
+                saveGoal();
+                updateUI();
+            }
+        });
+    }
+
+    // Avvio
+    init();
+</script>
+
+<!-- PWA: registrazione service worker -->
+<script>
+    /*
+     * 2025-11-30 Igor Guida - Madeinlinux®
+     * Qui registro il service worker per avere caching offline
+     * e comportamento tipico di una PWA installabile.
+     */
+    if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+            navigator.serviceWorker.register("service-worker.js").catch(function (err) {
+                console.log("Service worker non registrato:", err);
+            });
+        });
+    }
+</script>
+
+</body>
+</html>
